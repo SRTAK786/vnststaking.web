@@ -63,6 +63,10 @@ window.addEventListener('DOMContentLoaded', async () => {
         console.log('Non-Ethereum browser detected. Consider installing MetaMask!');
     }
 
+    if (isConnected) {
+        await updateUI();
+    }
+});
     // Event Listeners
     connectWalletBtn.addEventListener('click', toggleWalletModal);
     closeModal.addEventListener('click', toggleWalletModal);
@@ -96,6 +100,11 @@ window.addEventListener('DOMContentLoaded', async () => {
 // Initialize contracts
 function initContracts() {
     try {
+        if (!web3) {
+            console.error("Web3 not initialized");
+            return;
+        }
+
         vnstTokenContract = new web3.eth.Contract(vnstTokenABI, vnstTokenAddress);
         stakingContract = new web3.eth.Contract(stakingABI, stakingAddress);
         console.log("Contracts initialized successfully");
@@ -209,26 +218,39 @@ async function claimRewards() {
 
 // Team Page Functions
 async function loadTeamData() {
-    if (!isConnected || !accounts[0] || !stakingContract) return;
+    if (!isConnected || !accounts[0] || !stakingContract) {
+        console.log("Not connected or contracts not initialized");
+        return;
+    }
     
     try {
+        console.log("Loading team data...");
+        
         // Get user level
-        const userLevel = await stakingContract.methods.getUserLevel(accounts[0]).call();
+        const userLevel = await stakingContract.methods.curUserLevel(accounts[0]).call();
         document.getElementById('userLevel').textContent = userLevel;
         
-        // Get team counts and status for each level
+        // Get team counts for each level
         for (let i = 1; i <= 5; i++) {
-            const team = await stakingContract.methods.getTeamUsers(accounts[0], i).call();
-            document.getElementById(`level${i}Count`).textContent = `${team.length} Members`;
-            
-            // Check if level is unlocked
-            const levelUnlocked = await stakingContract.methods.checkLevel(accounts[0], i-1).call();
-            document.getElementById(`level${i}Status`).textContent = levelUnlocked ? "Status: Unlocked" : "Status: Locked";
-            document.getElementById(`level${i}Status`).style.color = levelUnlocked ? "#4CAF50" : "#F44336";
-            
-            // Get level deposits
-            const levelDeposit = await stakingContract.methods.userLevelDeposit(accounts[0], i-1).call();
-            document.getElementById(`level${i}Stake`).textContent = `${web3.utils.fromWei(levelDeposit, 'ether')} VNST`;
+            try {
+                const team = await stakingContract.methods.getTeamUsers(accounts[0], i-1).call();
+                document.getElementById(`level${i}Count`).textContent = `${team.length} Members`;
+                
+                // Check level status
+                const levelStatus = await stakingContract.methods.checkLevel(accounts[0], i-1).call();
+                document.getElementById(`level${i}Status`).textContent = 
+                    levelStatus ? "Unlocked" : "Locked";
+                document.getElementById(`level${i}Status`).style.color = 
+                    levelStatus ? "#4CAF50" : "#F44336";
+                
+                // Get level deposits
+                const user = await stakingContract.methods.users(accounts[0]).call();
+                const levelDeposit = user.levelDeposits[i-1] || "0";
+                document.getElementById(`level${i}Stake`).textContent = 
+                    `${web3.utils.fromWei(levelDeposit, 'ether')} VNST`;
+            } catch (error) {
+                console.error(`Error loading level ${i} data:`, error);
+            }
         }
         
         // Get total team stats
@@ -236,15 +258,18 @@ async function loadTeamData() {
         document.getElementById('totalTeamMembers').textContent = userInfo.referralCount;
         
         const totalTeamStake = await stakingContract.methods.getTotalStaked(accounts[0]).call();
-        document.getElementById('totalTeamStake').textContent = `${web3.utils.fromWei(totalTeamStake, 'ether')} VNST`;
+        document.getElementById('totalTeamStake').textContent = 
+            `${web3.utils.fromWei(totalTeamStake, 'ether')} VNST`;
         
-        // Get earnings
-        const totalReferralEarnings = await stakingContract.methods.getTotalReferralEarnings(accounts[0]).call();
-        document.getElementById('directIncome').textContent = `${web3.utils.fromWei(totalReferralEarnings, 'ether')} USDT`;
+        // Get direct income
+        const directIncome = await calculateDirectIncome();
+        document.getElementById('directIncome').textContent = 
+            `${web3.utils.fromWei(directIncome, 'ether')} USDT`;
         
-        // Get ROI of ROI income (from user's total claimed rewards)
+        // Get ROI income
         const roiIncome = await calculateROIIncome();
-        document.getElementById('roiIncome').textContent = `${web3.utils.fromWei(roiIncome, 'ether')} USDT`;
+        document.getElementById('roiIncome').textContent = 
+            `${web3.utils.fromWei(roiIncome, 'ether')} USDT`;
         
     } catch (error) {
         console.error("Error loading team data:", error);
@@ -326,7 +351,7 @@ async function setupStakingPage() {
 
 // UI functions
 async function updateUI() {
-    if (!isConnected || !accounts[0] || !stakingContract) {
+    if (!isConnected || !accounts[0]) {
         console.log("UI update skipped - not connected");
         return;
     }
@@ -334,26 +359,64 @@ async function updateUI() {
     try {
         console.log("Updating UI...");
         
+        // Initialize contracts if not done
+        if (!vnstTokenContract || !stakingContract) {
+            initContracts();
+        }
+        
         // Common updates
         updateWalletButton();
+        
+        // Update wallet balance
+        if (document.getElementById('walletBalance')) {
+            const balance = await vnstTokenContract.methods.balanceOf(accounts[0]).call();
+            document.getElementById('walletBalance').textContent = 
+                `${web3.utils.fromWei(balance, 'ether')} VNST`;
+        }
         
         // Page-specific updates
         if (window.location.pathname.includes('team.html')) {
             await loadTeamData();
-        } else if (window.location.pathname.includes('stake.html')) {
+        } 
+        else if (window.location.pathname.includes('stake.html')) {
             await setupStakingPage();
         }
-        
-        // Update wallet balance if element exists
-        if (document.getElementById('walletBalance')) {
-            const balance = await vnstTokenContract.methods.balanceOf(accounts[0]).call();
-            document.getElementById('walletBalance').textContent = 
-                web3.utils.fromWei(balance, 'ether') + ' VNST';
+        else {
+            // Home page updates
+            await updateHomePage();
         }
         
-        console.log("UI updated successfully");
     } catch (error) {
         console.error("UI update failed:", error);
+    }
+}
+
+// Add this new function for home page
+async function updateHomePage() {
+    try {
+        // Get total staked
+        const totalStaked = await stakingContract.methods.getTotalStaked(accounts[0]).call();
+        if (document.getElementById('totalStaked')) {
+            document.getElementById('totalStaked').textContent = 
+                `${web3.utils.fromWei(totalStaked, 'ether')} VNST`;
+        }
+        
+        // Get pending rewards
+        const rewards = await stakingContract.methods.getPendingRewards(accounts[0]).call();
+        if (rewards && document.getElementById('totalRewards')) {
+            const vntRewards = web3.utils.fromWei(rewards[0] || '0', 'ether');
+            const usdtRewards = web3.utils.fromWei(rewards[1] || '0', 'ether');
+            document.getElementById('totalRewards').textContent = 
+                `${vntRewards} VNT + ${usdtRewards} USDT`;
+        }
+        
+        // Get referral count
+        const userInfo = await stakingContract.methods.users(accounts[0]).call();
+        if (document.getElementById('referralCount')) {
+            document.getElementById('referralCount').textContent = userInfo.referralCount;
+        }
+    } catch (error) {
+        console.error("Home page update failed:", error);
     }
 }
 
