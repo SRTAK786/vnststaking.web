@@ -338,6 +338,9 @@ async function setupStakingPage() {
                 if (stake.isActive) {
                     const stakeAmount = web3.utils.fromWei(stake.amount, 'ether');
                     totalActive += parseFloat(stakeAmount);
+
+                    const currentDay = Math.floor(Date.now() / 86400);
+                    const daysStaked = currentDay - stake.startDay;
                     
                     stakesList.innerHTML += `
                         <div class="stake-item">
