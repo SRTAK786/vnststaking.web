@@ -66,7 +66,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (isConnected) {
         await updateUI();
     }
-});
+
     // Event Listeners
     connectWalletBtn.addEventListener('click', toggleWalletModal);
     closeModal.addEventListener('click', toggleWalletModal);
