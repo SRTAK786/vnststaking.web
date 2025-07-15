@@ -225,54 +225,60 @@ async function loadTeamData() {
     
     try {
         console.log("Loading team data...");
-        
-        // Get user level
-        const userLevel = await stakingContract.methods.curUserLevel(accounts[0]).call();
+
+        // सभी आवश्यक डेटा एक साथ प्राप्त करें
+        const [levelDetails, userLevel, userInfo] = await Promise.all([
+            stakingContract.methods.getLevelDetails(accounts[0]).call(),
+            stakingContract.methods.curUserLevel(accounts[0]).call(),
+            stakingContract.methods.users(accounts[0]).call()
+        ]);
+
         document.getElementById('userLevel').textContent = userLevel;
         
-        // Get team counts for each level
+        // टीम के सदस्यों की संख्या और स्टेटस प्रदर्शित करें
         for (let i = 1; i <= 5; i++) {
             try {
-                const team = await stakingContract.methods.getTeamUsers(accounts[0], i-1).call();
+                const levelIndex = i - 1;
+                
+                // टीम डेटा प्राप्त करें
+                const team = await stakingContract.methods.getTeamUsers(accounts[0], levelIndex).call();
+                
+                // UI अपडेट करें
                 document.getElementById(`level${i}Count`).textContent = `${team.length} Members`;
-                
-                // Check level status
-                const levelStatus = await stakingContract.methods.checkLevel(accounts[0], i-1).call();
                 document.getElementById(`level${i}Status`).textContent = 
-                    levelStatus ? "Unlocked" : "Locked";
+                    levelDetails.levelsAchieved[levelIndex] ? "Unlocked" : "Locked";
                 document.getElementById(`level${i}Status`).style.color = 
-                    levelStatus ? "#4CAF50" : "#F44336";
-                
-                // Get level deposits
-                const user = await stakingContract.methods.users(accounts[0]).call();
-                const levelDeposit = user.levelDeposits[i-1] || "0";
+                    levelDetails.levelsAchieved[levelIndex] ? "#4CAF50" : "#F44336";
                 document.getElementById(`level${i}Stake`).textContent = 
-                    `${web3.utils.fromWei(levelDeposit, 'ether')} VNST`;
+                    `${web3.utils.fromWei(levelDetails.levelDeposits[levelIndex], 'ether')} VNST`;
+                    
             } catch (error) {
-                console.error(`Error loading level ${i} data:`, error);
+                console.error(`Level ${i} loading error:`, error);
+                document.getElementById(`level${i}Count`).textContent = "0 Members";
+                document.getElementById(`level${i}Status`).textContent = "Locked";
+                document.getElementById(`level${i}Status`).style.color = "#F44336";
+                document.getElementById(`level${i}Stake`).textContent = "0 VNST";
             }
         }
-        
-        // Get total team stats
-        const userInfo = await stakingContract.methods.users(accounts[0]).call();
+
+        // कुल टीम स्टैटिस्टिक्स
         document.getElementById('totalTeamMembers').textContent = userInfo.referralCount;
         
         const totalTeamStake = await stakingContract.methods.getTotalStaked(accounts[0]).call();
         document.getElementById('totalTeamStake').textContent = 
             `${web3.utils.fromWei(totalTeamStake, 'ether')} VNST`;
         
-        // Get direct income
+        // इनकम कैलकुलेशन
         const directIncome = await calculateDirectIncome();
         document.getElementById('directIncome').textContent = 
             `${web3.utils.fromWei(directIncome, 'ether')} USDT`;
         
-        // Get ROI income
         const roiIncome = await calculateROIIncome();
         document.getElementById('roiIncome').textContent = 
             `${web3.utils.fromWei(roiIncome, 'ether')} USDT`;
         
     } catch (error) {
-        console.error("Error loading team data:", error);
+        console.error("Team data loading failed:", error);
     }
 }
 
@@ -287,6 +293,30 @@ async function calculateROIIncome() {
         return roiIncome.toString();
     } catch (error) {
         console.error("Error calculating ROI income:", error);
+        return "0";
+    }
+}
+
+async function calculateDirectIncome() {
+    try {
+        const userInfo = await stakingContract.methods.users(accounts[0]).call();
+        let totalDirectIncome = web3.utils.toBN(0);
+        
+        // Calculate based on level deposits and reward percentages
+        for (let i = 0; i < 5; i++) {
+            const levelDeposit = userInfo.levelDeposits && userInfo.levelDeposits[i] 
+                ? web3.utils.toBN(userInfo.levelDeposits[i])
+                : web3.utils.toBN(0);
+                
+            const rewardPercent = 5 - i; // 5% for level 1, 4% for level 2 etc.
+            const levelIncome = levelDeposit.mul(web3.utils.toBN(rewardPercent)).div(web3.utils.toBN(100));
+            
+            totalDirectIncome = totalDirectIncome.add(levelIncome);
+        }
+        
+        return totalDirectIncome.toString();
+    } catch (error) {
+        console.error("Error calculating direct income:", error);
         return "0";
     }
 }
