@@ -192,54 +192,6 @@ async function stakeTokens() {
     }
 }
 
-async function loadTeamData() {
-    if (!isConnected || !accounts[0] || !stakingContract) return;
-
-    try {
-        // 1. यूजर लेवल लोड करें
-        const userLevel = await stakingContract.methods.getUserLevel(accounts[0]).call();
-        document.getElementById('userLevel').textContent = userLevel;
-
-        // 2. हर लेवल के लिए डेटा प्रोसेस करें
-        for (let level = 1; level <= 5; level++) {
-            try {
-                // टीम मेम्बर्स लोड करें
-                const teamMembers = await stakingContract.methods.getTeamUsers(accounts[0], level).call();
-                const memberCount = teamMembers.length;
-                document.getElementById(`level${level}Count`).textContent = `${memberCount} Members`;
-                
-                // बिना checkLevel फंक्शन के अनलॉक स्टेटस चेक करें
-                const isLevelUnlocked = memberCount >= 2; // 2 मेम्बर्स होने पर अनलॉक
-                const statusText = isLevelUnlocked ? "Unlocked" : "Locked";
-                const statusColor = isLevelUnlocked ? "#4CAF50" : "#F44336";
-                
-                document.getElementById(`level${level}Status`).textContent = `Status: ${statusText}`;
-                document.getElementById(`level${level}Status`).style.color = statusColor;
-                
-                // लेवल स्टेक (अगर HTML में है)
-                if (document.getElementById(`level${level}Stake`)) {
-                    try {
-                        const levelDeposit = await stakingContract.methods.userLevelDeposit(accounts[0], level-1).call();
-                        document.getElementById(`level${level}Stake`).textContent = 
-                            `${web3.utils.fromWei(levelDeposit, 'ether')} VNST`;
-                    } catch (e) {
-                        console.log(`Level ${level} deposit not available`);
-                        document.getElementById(`level${level}Stake`).textContent = "0 VNST";
-                    }
-                }
-                
-            } catch (error) {
-                console.error(`Error loading level ${level} data:`, error);
-                document.getElementById(`level${level}Status`).textContent = "Error";
-            }
-        }
-        
-    } catch (error) {
-        console.error("Error loading team data:", error);
-        alert("टीम डेटा लोड करने में त्रुटि। कृपया कंसोल चेक करें।");
-    }
-}
-
 async function claimRewards() {
     if (!isConnected) return alert("Please connect your wallet first");
     
